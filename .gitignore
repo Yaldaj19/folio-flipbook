@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Logs & temp
+*.log
+*.tmp
+
+# Node (اگر بعداً build اضافه شد)
+node_modules/

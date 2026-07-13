@@ -1,0 +1,18 @@
+<wpml-config>
+	<custom-types>
+		<!-- نوع محتوای کاتالوگ قابل ترجمه است: برای هر زبان یک کاتالوگ جدا -->
+		<custom-type translate="1" display-as-translated="1">flip_catalog</custom-type>
+	</custom-types>
+	<custom-fields>
+		<!-- idهای پیوست و تنظیمات، هنگام ترجمه کپی می‌شوند تا مترجم فقط تصاویر را عوض کند -->
+		<custom-field action="copy">_fc_direction</custom-field>
+		<custom-field action="copy">_fc_mode</custom-field>
+		<custom-field action="copy">_fc_intro</custom-field>
+		<custom-field action="copy">_fc_sound</custom-field>
+		<custom-field action="copy">_fc_pages</custom-field>
+		<custom-field action="copy">_fc_source</custom-field>
+		<custom-field action="copy">_fc_pdf</custom-field>
+		<custom-field action="copy">_fc_pdf_thumb</custom-field>
+		<custom-field action="copy">_fc_background</custom-field>
+	</custom-fields>
+</wpml-config>

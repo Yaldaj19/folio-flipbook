@@ -1,0 +1,14 @@
+# Folio viewer assets — همیشه revalidate شوند تا نسخهٔ کهنه از کش مرورگر سرو نشود.
+# (LiteSpeed کوئری‌استرینگ نسخه را حذف می‌کند و mod_expires خاموش است؛ پس با ETag/Last-Modified
+#  و no-cache مرورگر هر بار تازه بودن فایل را چک می‌کند — یک 304 ارزان، نه سرو نسخهٔ قدیمی.)
+<IfModule mod_headers.c>
+	<FilesMatch "\.(js|css)$">
+		Header set Cache-Control "no-cache, must-revalidate"
+	</FilesMatch>
+</IfModule>
+
+# نام فایل نسخه‌دار (flip-catalog.<mtime>.js) → فایل اصلی. هر ویرایش = URL جدید = کش‌شکنی قطعی.
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteRule ^(.+)\.[0-9]+\.(js|css)$ $1.$2 [L]
+</IfModule>
