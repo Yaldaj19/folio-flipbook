@@ -194,8 +194,10 @@
 		var baseW = 500, baseH = Math.round(baseW * this.ratio);
 		var pf = new St.PageFlip(this.stage, {
 			width: baseW, height: baseH, size: 'stretch',
-			minWidth: 260, maxWidth: 1700,
-			minHeight: 200, maxHeight: 2600,
+			// minWidth کوچک تا page-flip روی موبایل هم دوصفحه (landscape) بماند، مثل دسکتاپ.
+			// آستانه‌ی portrait = ۲×minWidth = ۲۸۰؛ عرضِ موبایلِ ~۳۲۰ ازش بیشتر است → دوصفحه.
+			minWidth: 140, maxWidth: 1700,
+			minHeight: 140, maxHeight: 2600,
 			drawShadow: true, maxShadowOpacity: 0.7, flippingTime: 850,
 			usePortrait: true,          // اجازه‌ی تک‌صفحه در موبایل
 			showCover: true,            // جلدِ تنها → باز شدن دوصفحه‌ای
