@@ -334,6 +334,10 @@
 .fc-btn[disabled] { opacity: .32; cursor: default; box-shadow: none; transform: none; }
 .fc-btn[disabled]:hover { color: #fff; border-color: rgba(255, 255, 255, .22); background: rgba(26, 24, 20, .60); }
 
+/* دکمه‌ی دانلود PDF (یک <a> است؛ زیرخط را حذف می‌کنیم و آیکن هنگام hover کمی پایین می‌رود مثل «دانلود») */
+.fc-download { text-decoration: none; }
+.fc-download:hover svg { transform: translateY(2px); }
+
 /* آیکن‌ها به سمت حرکت اشاره می‌کنند؛ hover کمی به همان سمت هل می‌دهد */
 .fc-prev:hover svg { transform: translateX(2px); }   /* RTL: قبلی → راست */
 .fc-next:hover svg { transform: translateX(-2px); }  /* RTL: بعدی → چپ */

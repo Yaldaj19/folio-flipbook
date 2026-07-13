@@ -200,6 +200,11 @@ class FC_Shortcode {
 				<button type="button" class="fc-btn fc-full" aria-label="تمام‌صفحه">
 					<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 9V4h5v2H6v3H4zm14 0V6h-3V4h5v5h-2zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>
 				</button>
+				<?php if ( $pdf_url ) : ?>
+					<a class="fc-btn fc-download" href="<?php echo esc_url( $pdf_url ); ?>" download rel="noopener" aria-label="دانلود PDF با کیفیت اصلی" title="دانلود PDF (کیفیت اصلی)">
+						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M11 4h2v8.17l2.59-2.58L17 11l-5 5-5-5 1.41-1.41L11 12.17V4z"/><path fill="currentColor" d="M5 18h14v2H5z"/></svg>
+					</a>
+				<?php endif; ?>
 			</div>
 
 			<script type="application/json" class="fc-json"><?php echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_json_encode خروجی امن است. ?></script>
