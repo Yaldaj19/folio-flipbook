@@ -6,7 +6,7 @@
 	'use strict';
 
 	// نشانهٔ نسخه — برای تشخیص اینکه مرورگر کد جدید را اجرا می‌کند یا نسخهٔ کهنهٔ کش‌شده را.
-	console.log('%cFOLIO viewer build 2026-07-13 ✓ (true-RTL + first-page + fullscreen-rebuild)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+	console.log('%cFOLIO viewer build 2026-07-14 ✓ (true-RTL + progressive-hires + zoom/pan)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
 
 	var FA = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 	function fa(n) { return String(n).replace(/\d/g, function (d) { return FA[+d]; }); }
@@ -101,9 +101,24 @@
 		this.nextBtn = root.querySelector('.fc-next');
 		this.soundBtn = root.querySelector('.fc-sound');
 		this.fullBtn = root.querySelector('.fc-full');
+		this.zoomInBtn = root.querySelector('.fc-zoom-in');
+		this.zoomOutBtn = root.querySelector('.fc-zoom-out');
+		this.zoomResetBtn = root.querySelector('.fc-zoom-reset');
 
 		try { this.urls = JSON.parse(root.querySelector('.fc-json').textContent) || []; }
 		catch (e) { this.urls = []; }
+		// نسخه‌ی کیفیت‌بالا (full) موازی با urls — برای ارتقای تدریجی بعد از آماده‌شدن.
+		try {
+			var hn = root.querySelector('.fc-json-hires');
+			this.hires = hn ? (JSON.parse(hn.textContent) || []) : [];
+		} catch (e) { this.hires = []; }
+
+		// وضعیت بزرگ‌نمایی
+		this.zoom = 1;
+		this.panX = 0;
+		this.panY = 0;
+		this.ZOOM_MIN = 1;
+		this.ZOOM_MAX = 3;
 
 		this.dir = root.dataset.dir === 'ltr' ? 'ltr' : 'rtl';
 		this.rtl = this.dir === 'rtl';
@@ -151,6 +166,11 @@
 	 */
 	Catalog.prototype.orderedImages = function () {
 		return this.rtl ? this.urls.slice().reverse() : this.urls.slice();
+	};
+	// نسخه‌ی کیفیت‌بالا با همان ترتیبِ orderedImages (برای هم‌ترازیِ ایندکس‌ها).
+	Catalog.prototype.orderedHires = function () {
+		var h = this.hires || [];
+		return this.rtl ? h.slice().reverse() : h.slice();
 	};
 	// ایندکسِ موتور که «جلد/صفحهٔ اولِ کاتالوگ» را نشان می‌دهد.
 	Catalog.prototype.coverIndex = function (len) {
@@ -209,7 +229,12 @@
 
 		pf.on('flip', function (e) { self.updateCounter(e.data); });
 		pf.on('changeState', function (e) {
-			if (e.data === 'read') { self.reveal(); }
+			self._state = e.data;
+			if (e.data === 'read') {
+				self.reveal();
+				// اگر ارتقای کیفیتی در حین ورق‌زدن معلق مانده، حالا که کتاب ساکن شد repaint کن.
+				if (self._repaintPending) { self._repaintPending = false; try { if (self.pf.update) { self.pf.update(); } } catch (err) {} }
+			}
 			// صدای ورق دقیقاً هنگام شروعِ چرخش صفحه (باز شدن/ورق‌زدن)
 			if (e.data === 'flipping' && self.soundOn) { self.playSound(); }
 			// توقف انیمیشن‌های محیطی هنگام drag تا با رندر کاغذ رقابت نکنند
@@ -228,9 +253,13 @@
 	Catalog.prototype.build = function () {
 		if (!this.count || typeof St === 'undefined' || !St.PageFlip) { return; }
 
-		var imgs = this.orderedImages();
-		var cover = this.coverIndex(imgs.length);
-		this.mount(imgs, cover);
+		// displayImages = آرایه‌ی «بهترین کیفیتِ موجود» در ترتیبِ موتور. با large شروع می‌شود
+		// و ارتقای تدریجی، خانه‌هایش را با full جایگزین می‌کند؛ rebuild هم از همین می‌خواند.
+		this.displayImages = this.orderedImages();
+		this.hiresOrdered = this.orderedHires();
+
+		var cover = this.coverIndex(this.displayImages.length);
+		this.mount(this.displayImages, cover);
 		this.bind();
 
 		var self = this;
@@ -240,6 +269,8 @@
 			if (self.pf.getCurrentPageIndex() !== c && self.pf.turnToPage) { self.pf.turnToPage(c); }
 			self.reveal();
 			self.updateCounter(self.pf.getCurrentPageIndex());
+			// ارتقای تدریجیِ کیفیت را کمی بعد از آماده‌شدن شروع کن تا لودِ اولیه مختل نشود.
+			setTimeout(function () { self.startProgressive(); }, 700);
 		}, 450);
 		this.updateCounter(cover);
 	};
@@ -253,6 +284,8 @@
 	Catalog.prototype.rebuild = function () {
 		if (!this.pf) { this.fitStage(); return; }
 		if (!this.urls || !this.urls.length) { return; }
+		this.resetZoom();                                   // بزرگ‌نمایی با بازسازیِ موتور معنا ندارد
+		if (!this.displayImages) { this.displayImages = this.orderedImages(); }
 		var idx = this.pf.getCurrentPageIndex ? this.pf.getCurrentPageIndex() : 0;
 		// نکته: StPageFlip.destroy() خودِ المانِ .fc-stage را هم از DOM حذف می‌کند،
 		// پس بعد از آن یک .fc-stage تازه می‌سازیم و موتور را رویش سوار می‌کنیم.
@@ -262,7 +295,7 @@
 		stage.className = 'fc-stage';
 		this.scene.appendChild(stage);
 		this.stage = stage;
-		this.mount(this.orderedImages(), idx);
+		this.mount(this.displayImages, idx);
 		this.updateCounter(this.pf.getCurrentPageIndex());
 	};
 
@@ -308,6 +341,83 @@
 		});
 	};
 
+	/* =========================================================
+	   ارتقای تدریجیِ کیفیت (large → full)
+	   ---------------------------------------------------------
+	   بعد از آماده‌شدنِ کاتالوگ، نسخه‌ی full هر صفحه را در پس‌زمینه و به‌ترتیبِ
+	   نزدیکی به صفحه‌ی جاری پیش‌بارگذاری می‌کنیم؛ وقتی کاملاً decode شد، شیءِ
+	   تصویرِ همان صفحه را مستقیم در موتور جایگزین می‌کنیم (بدون flashِ لودر) و
+	   فقط اسپردِ ساکن را repaint می‌کنیم. اسکناسِ حافظه/پهنای‌باند را با
+	   requestIdleCallback و لودِ تک‌به‌تک کنترل می‌کنیم.
+	   ========================================================= */
+	Catalog.prototype.startProgressive = function () {
+		if (this._prog) { return; }
+		if (this.source === 'pdf') { return; }               // PDF از قبل با کیفیتِ هدف رندر شده
+		var hires = this.hiresOrdered || [];
+		if (!hires.length || !this.displayImages) { return; }
+
+		// در حالتِ ذخیره‌ی داده یا شبکه‌ی خیلی کند، ارتقا را انجام نده.
+		var conn = navigator.connection || navigator.webkitConnection;
+		if (conn && (conn.saveData || /(^|[^3-9])2g$/.test(conn.effectiveType || ''))) { return; }
+
+		var pending = [];
+		for (var i = 0; i < hires.length; i++) {
+			if (hires[i] && hires[i] !== this.displayImages[i]) { pending.push(i); }
+		}
+		if (!pending.length) { return; }
+		this._prog = true;
+
+		// اولویت: نزدیک‌ترین صفحه به موقعیتِ فعلی، اول.
+		var cur = (this.pf && this.pf.getCurrentPageIndex) ? this.pf.getCurrentPageIndex() : 0;
+		pending.sort(function (a, b) { return Math.abs(a - cur) - Math.abs(b - cur); });
+
+		var self = this;
+		var idle = window.requestIdleCallback || function (fn) { return setTimeout(function () { fn(); }, 90); };
+		var qi = 0;
+		function next() {
+			if (qi >= pending.length) { self._prog = 'done'; return; }
+			var idx = pending[qi++];
+			var url = hires[idx];
+			var im = new Image();
+			im.decoding = 'async';
+			im.onload = function () {
+				// فقط اگر واقعاً decode شده باشد جایگزین کن.
+				if (im.naturalWidth) { self.applyUpgrade(idx, url, im); }
+				idle(next);
+			};
+			im.onerror = function () { idle(next); };
+			im.src = url;
+		}
+		idle(next);
+	};
+
+	Catalog.prototype.applyUpgrade = function (idx, url, img) {
+		if (!this.displayImages) { return; }
+		this.displayImages[idx] = url;                       // ماندگار برای rebuild
+		if (!this.pf || typeof this.pf.getPage !== 'function') { return; }
+		var page;
+		try { page = this.pf.getPage(idx); } catch (e) { return; }
+		if (!page) { return; }
+		// شیءِ تصویرِ از پیش decode‌شده را مستقیم بگذار → نه لودر، نه بارگذاریِ دوباره.
+		page.image = img;
+		page.isLoad = true;
+		this.scheduleRepaint();
+	};
+
+	// چند ارتقای هم‌فریم را در یک repaint جمع می‌کند؛ اگر کتاب در حالِ ورق‌خوردن است، معلق می‌ماند.
+	Catalog.prototype.scheduleRepaint = function () {
+		var self = this;
+		this._repaintPending = true;
+		if (this._repaintRAF) { return; }
+		this._repaintRAF = requestAnimationFrame(function () {
+			self._repaintRAF = 0;
+			if (!self._repaintPending) { return; }
+			if (self._state && self._state !== 'read') { return; } // در 'read' بعدی repaint می‌شود
+			self._repaintPending = false;
+			try { if (self.pf && self.pf.update) { self.pf.update(); } } catch (e) {}
+		});
+	};
+
 	/*
 	 * شماره‌ی صفحه‌ی کاتالوگ از روی ایندکسِ موتور.
 	 * RTL: آرایه برعکس است، پس ایندکس ۰ = آخرین صفحه؛ شماره = count - li.
@@ -331,8 +441,9 @@
 	};
 
 	// پیش‌رویِ کاتالوگ: RTL با flipPrev (چون آرایه برعکس است) → حسِ راست‌به‌چپ. LTR با flipNext.
-	Catalog.prototype.forward  = function () { if (this.pf) { this.rtl ? this.pf.flipPrev() : this.pf.flipNext(); } };
-	Catalog.prototype.backward = function () { if (this.pf) { this.rtl ? this.pf.flipNext() : this.pf.flipPrev(); } };
+	// با هر ورق‌زدن، بزرگ‌نمایی به حالتِ عادی برمی‌گردد.
+	Catalog.prototype.forward  = function () { this.resetZoom(); if (this.pf) { this.rtl ? this.pf.flipPrev() : this.pf.flipNext(); } };
+	Catalog.prototype.backward = function () { this.resetZoom(); if (this.pf) { this.rtl ? this.pf.flipNext() : this.pf.flipPrev(); } };
 
 	// پخش صدا با محافظ ضدتکرار (چند رویداد پشت‌سرهم = یک صدا)
 	Catalog.prototype.playSound = function () {
@@ -367,6 +478,134 @@
 		// بازسازی توسطِ رویدادِ fullscreenchange (بعد از نشستِ چیدمان) انجام می‌شود.
 	};
 
+	/* =========================================================
+	   بزرگ‌نمایی (zoom) + جابه‌جایی (pan)
+	   ---------------------------------------------------------
+	   transformِ CSS روی .fc-scene (شتاب‌گرفته با GPU). وقتی zoom > 1 است، درگِ
+	   موس/لمس برای pan استفاده می‌شود و ورق‌زدنِ StPageFlip موقتاً بلوکه می‌شود؛
+	   با هر ورق‌زدن یا reset، به حالتِ عادی برمی‌گردد. کنترل با دکمه، ctrl+چرخِ موس،
+	   دوبار-کلیک و pinchِ دوانگشتی.
+	   ========================================================= */
+	Catalog.prototype.applyZoom = function () {
+		var z = this.zoom;
+		if (z <= 1) {
+			this.zoom = 1; this.panX = 0; this.panY = 0;
+			this.scene.style.transform = '';
+			this.root.classList.remove('fc-zoomed');
+		} else {
+			this.clampPan();
+			this.scene.style.transform = 'translate(' + this.panX + 'px,' + this.panY + 'px) scale(' + z + ')';
+			this.root.classList.add('fc-zoomed');
+		}
+		if (this.zoomOutBtn) { this.zoomOutBtn.disabled = (this.zoom <= this.ZOOM_MIN); }
+		if (this.zoomInBtn) { this.zoomInBtn.disabled = (this.zoom >= this.ZOOM_MAX); }
+	};
+
+	Catalog.prototype.clampPan = function () {
+		var w = this.scene.offsetWidth || 0, h = this.scene.offsetHeight || 0;
+		var maxX = (w * (this.zoom - 1)) / 2;
+		var maxY = (h * (this.zoom - 1)) / 2;
+		this.panX = Math.max(-maxX, Math.min(maxX, this.panX));
+		this.panY = Math.max(-maxY, Math.min(maxY, this.panY));
+	};
+
+	Catalog.prototype.setZoom = function (z) {
+		z = Math.max(this.ZOOM_MIN, Math.min(this.ZOOM_MAX, Math.round(z * 100) / 100));
+		if (z === this.zoom) { return; }
+		this.zoom = z;
+		this.applyZoom();
+	};
+
+	Catalog.prototype.zoomBy = function (delta) { this.setZoom(this.zoom + delta); };
+
+	Catalog.prototype.resetZoom = function () {
+		if (this.zoom === 1 && !this.panX && !this.panY) { return; }
+		this.zoom = 1; this.panX = 0; this.panY = 0;
+		this.applyZoom();
+	};
+
+	Catalog.prototype.initZoom = function () {
+		var self = this, scene = this.scene;
+		if (!scene) { return; }
+
+		if (this.zoomInBtn) { this.zoomInBtn.addEventListener('click', function () { self.zoomBy(0.5); }); }
+		if (this.zoomOutBtn) { this.zoomOutBtn.addEventListener('click', function () { self.zoomBy(-0.5); }); }
+		if (this.zoomResetBtn) { this.zoomResetBtn.addEventListener('click', function () { self.resetZoom(); }); }
+
+		// ctrl + چرخِ موس (و pinchِ تاچ‌پد که همان ctrl+wheel است).
+		scene.addEventListener('wheel', function (e) {
+			if (!e.ctrlKey) { return; }
+			e.preventDefault();
+			self.zoomBy(e.deltaY < 0 ? 0.25 : -0.25);
+		}, { passive: false });
+
+		// --- بلوکه‌کردنِ ورق‌زدنِ StPageFlip وقتی zoom فعال است (فاز capture) ---
+		var block = function (e) { if (self.zoom > 1) { e.stopPropagation(); } };
+		scene.addEventListener('mousedown', block, true);
+		scene.addEventListener('touchstart', function (e) {
+			if (self.zoom > 1) { e.stopPropagation(); e.preventDefault(); }
+		}, { capture: true, passive: false });
+
+		// --- pan با درگ + pinch دوانگشتی (Pointer Events) ---
+		var pts = {};                 // pointerId → {x,y}
+		var panning = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
+		var pinch = false, pinchDist = 0, pinchZoom = 1;
+
+		function dist() {
+			var ids = Object.keys(pts);
+			var a = pts[ids[0]], b = pts[ids[1]];
+			return Math.hypot(a.x - b.x, a.y - b.y);
+		}
+
+		scene.addEventListener('pointerdown', function (e) {
+			pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+			var n = Object.keys(pts).length;
+			if (n === 2) {                       // شروعِ pinch
+				pinch = true; panning = false;
+				pinchDist = dist(); pinchZoom = self.zoom;
+				e.stopPropagation();
+				return;
+			}
+			if (self.zoom > 1) {                 // شروعِ pan
+				e.stopPropagation();
+				panning = true;
+				startX = e.clientX; startY = e.clientY;
+				baseX = self.panX; baseY = self.panY;
+				scene.classList.add('fc-panning');
+				try { scene.setPointerCapture(e.pointerId); } catch (err) {}
+			}
+		}, true);
+
+		scene.addEventListener('pointermove', function (e) {
+			if (!pts[e.pointerId]) { return; }
+			pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+			if (pinch && Object.keys(pts).length === 2) {
+				e.preventDefault(); e.stopPropagation();
+				var d = dist();
+				if (pinchDist > 0) { self.setZoom(pinchZoom * (d / pinchDist)); }
+				return;
+			}
+			if (panning) {
+				e.preventDefault(); e.stopPropagation();
+				self.panX = baseX + (e.clientX - startX);
+				self.panY = baseY + (e.clientY - startY);
+				self.applyZoom();
+			}
+		}, true);
+
+		var up = function (e) {
+			delete pts[e.pointerId];
+			if (Object.keys(pts).length < 2) { pinch = false; }
+			if (panning && Object.keys(pts).length === 0) {
+				panning = false;
+				scene.classList.remove('fc-panning');
+				try { scene.releasePointerCapture(e.pointerId); } catch (err) {}
+			}
+		};
+		scene.addEventListener('pointerup', up, true);
+		scene.addEventListener('pointercancel', up, true);
+	};
+
 	Catalog.prototype.bind = function () {
 		var self = this;
 		this.nextBtn.addEventListener('click', function () { self.forward(); });
@@ -374,10 +613,15 @@
 		this.fullBtn.addEventListener('click', function () { self.toggleFull(); });
 		if (this.soundBtn) { this.soundBtn.addEventListener('click', function () { self.toggleSound(); }); }
 
+		this.initZoom();
+
 		this.root.setAttribute('tabindex', '0');
 		this.root.addEventListener('keydown', function (e) {
 			if (e.key === 'ArrowRight') { self.rtl ? self.backward() : self.forward(); }
 			else if (e.key === 'ArrowLeft') { self.rtl ? self.forward() : self.backward(); }
+			else if (e.key === '+' || e.key === '=') { e.preventDefault(); self.zoomBy(0.5); }
+			else if (e.key === '-' || e.key === '_') { e.preventDefault(); self.zoomBy(-0.5); }
+			else if (e.key === '0') { e.preventDefault(); self.resetZoom(); }
 		});
 
 		var rt;
@@ -387,6 +631,7 @@
 		});
 		// در تمام‌صفحه اندازه به‌کل عوض می‌شود؛ بعد از نشستِ چیدمان موتور را بازبساز تا برش نخورد.
 		var onFull = function () {
+			self.resetZoom();
 			self.root.classList.toggle('fc-is-full', document.fullscreenElement === self.root || document.webkitFullscreenElement === self.root);
 			setTimeout(function () { self.rebuild(); }, 300);
 		};

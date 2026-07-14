@@ -69,9 +69,15 @@ class FC_Shortcode {
 
 	/**
 	 * آدرس تصاویر صفحه‌ها.
+	 *
+	 * برای هر صفحه دو نسخه برمی‌گردانیم:
+	 *   - $urls  : نسخهٔ «large» → لودِ اولیه و سریعِ کاتالوگ (بدون مختل‌کردنِ سرعت).
+	 *   - $hires : نسخهٔ «full» (کیفیتِ اصلی) → بعد از آماده‌شدنِ کاتالوگ، به‌صورتِ تدریجی
+	 *              در پس‌زمینه جایگزین می‌شود. اگر full با large یکی بود، خالی می‌ماند (نیازی به ارتقا نیست).
 	 */
 	private static function page_urls( $ids ) {
 		$urls  = array();
+		$hires = array();
 		$first = null;
 		foreach ( $ids as $id ) {
 			$url = wp_get_attachment_image_url( $id, 'large' );
@@ -81,7 +87,9 @@ class FC_Shortcode {
 			if ( ! $url ) {
 				continue;
 			}
-			$urls[] = $url;
+			$full    = wp_get_attachment_image_url( $id, 'full' );
+			$urls[]  = $url;
+			$hires[] = ( $full && $full !== $url ) ? $full : '';
 			if ( null === $first ) {
 				$meta = wp_get_attachment_metadata( $id );
 				$w    = isset( $meta['sizes']['large']['width'] ) ? (int) $meta['sizes']['large']['width'] : ( isset( $meta['width'] ) ? (int) $meta['width'] : 0 );
@@ -89,7 +97,7 @@ class FC_Shortcode {
 				$first = array( 'w' => $w, 'h' => $h );
 			}
 		}
-		return array( $urls, $first );
+		return array( $urls, $first, $hires );
 	}
 
 	public static function render( $atts ) {
@@ -120,6 +128,7 @@ class FC_Shortcode {
 		$sound     = get_post_meta( $id, '_fc_sound', true ) ?: 'off';
 
 		$urls  = array();
+		$hires = array();
 		$count = 0;
 		$ratio = 1.414;
 
@@ -139,7 +148,7 @@ class FC_Shortcode {
 					? '<p style="color:#b32d2e">Folio: هنوز صفحه‌ای انتخاب نشده است.</p>'
 					: '';
 			}
-			list( $urls, $first ) = self::page_urls( $ids );
+			list( $urls, $first, $hires ) = self::page_urls( $ids );
 			if ( empty( $urls ) ) {
 				return '';
 			}
@@ -150,9 +159,10 @@ class FC_Shortcode {
 		wp_enqueue_style( 'flip-catalog' );
 		wp_enqueue_script( 'flip-catalog' );
 
-		$uid    = 'fc-cat-' . $id . '-' . wp_rand( 100, 999 );
-		$json   = wp_json_encode( array_values( $urls ) );
-		$worker = FC_URL . 'assets/vendor/pdf.worker.min.js';
+		$uid        = 'fc-cat-' . $id . '-' . wp_rand( 100, 999 );
+		$json       = wp_json_encode( array_values( $urls ) );
+		$json_hires = wp_json_encode( array_values( $hires ) );
+		$worker     = FC_URL . 'assets/vendor/pdf.worker.min.js';
 
 		ob_start();
 		?>
@@ -193,6 +203,17 @@ class FC_Shortcode {
 					<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.4 5.9 14 4.5 6.5 12l7.5 7.5 1.4-1.4L9.3 12z"/></svg>
 				</button>
 				<span class="fc-spacer"></span>
+				<div class="fc-zoom-group" role="group" aria-label="بزرگ‌نمایی">
+					<button type="button" class="fc-btn fc-zoom-out" aria-label="کوچک‌نمایی" title="کوچک‌نمایی">
+						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7z"/></svg>
+					</button>
+					<button type="button" class="fc-btn fc-zoom-reset" aria-label="بازنشانی بزرگ‌نمایی" title="اندازه‌ی عادی">
+						<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm-7 7H3v4c0 1.1.9 2 2 2h4v-2H5v-4zM5 5h4V3H5c-1.1 0-2 .9-2 2v4h2V5zm14-2h-4v2h4v4h2V5c0-1.1-.9-2-2-2zm0 16h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4z"/></svg>
+					</button>
+					<button type="button" class="fc-btn fc-zoom-in" aria-label="بزرگ‌نمایی" title="بزرگ‌نمایی">
+						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM9.5 7H9v2H7v1h2v2h1v-2h2V9h-2z"/></svg>
+					</button>
+				</div>
 				<button type="button" class="fc-btn fc-sound" aria-pressed="<?php echo 'on' === $sound ? 'true' : 'false'; ?>" aria-label="پخش صدای ورق">
 					<svg class="fc-ic-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm11-.83A4.5 4.5 0 0 1 16.5 12 4.5 4.5 0 0 1 14 15.83v-2.06a2.5 2.5 0 0 0 0-3.54V8.17zm0-4.94a9 9 0 0 1 0 17.54v-2.06a7 7 0 0 0 0-13.42V3.23z"/></svg>
 					<svg class="fc-ic-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm18.29-1.29L19.88 6.3 17.6 8.58l-2.29-2.3-1.41 1.42 2.29 2.3-2.29 2.29 1.41 1.41 2.29-2.29 2.28 2.29 1.41-1.41-2.28-2.29 2.28-2.29z"/></svg>
@@ -208,6 +229,7 @@ class FC_Shortcode {
 			</div>
 
 			<script type="application/json" class="fc-json"><?php echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_json_encode خروجی امن است. ?></script>
+			<script type="application/json" class="fc-json-hires"><?php echo $json_hires; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_json_encode خروجی امن است. ?></script>
 		</div>
 		<?php
 		return ob_get_clean();

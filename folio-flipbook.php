@@ -3,7 +3,7 @@
  * Plugin Name:       Folio – 3D Flipbook Catalog
  * Plugin URI:        https://bitakpaint.com/
  * Description:        نمایش کاتالوگ و دفترچه‌ی محصولات به‌صورت مجله‌ی سه‌بعدی واقعی؛ ورق‌زدن با کشیدنِ موس/انگشت روی کاغذ، پیچ‌خوردن گوشه و سایه‌ی نرم. سریع، بدون هنگ، چندزبانه (WPML). با شورت‌کد داخل هر برگه یا نوشته.
- * Version:           2.4.3
+ * Version:           2.5.0
  * Author:            Yalda Jahanshahi
  * Text Domain:       folio-flipbook
  * Domain Path:       /languages
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'FC_VERSION', '2.4.3' );
+define( 'FC_VERSION', '2.5.0' );
 define( 'FC_FILE', __FILE__ );
 define( 'FC_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FC_URL', plugin_dir_url( __FILE__ ) );

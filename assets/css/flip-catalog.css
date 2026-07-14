@@ -436,8 +436,28 @@
 .fc-catalog:fullscreen .fc-counter { color: #f5f0e6; }
 .fc-catalog:fullscreen .fc-progress { color: #ddd; }
 
+/* ---------- بزرگ‌نمایی (zoom / pan) ---------- */
+.fc-scene {
+	transform-origin: center center;
+	transition: transform .18s ease;
+	will-change: transform;
+}
+.fc-scene.fc-panning { transition: none; }        /* درگ باید بدون تأخیر باشد */
+
+/* محفظه هنگام بزرگ‌نمایی، محتوای بیرون‌زده را می‌بُرد */
+.fc-zoomed .fc-book-wrap { overflow: hidden; }
+.fc-zoomed .fc-scene { cursor: grab; touch-action: none; }
+.fc-zoomed .fc-scene.fc-panning { cursor: grabbing; }
+
+/* گروهِ دکمه‌های بزرگ‌نمایی */
+.fc-zoom-group { display: inline-flex; align-items: center; gap: 10px; }
+/* دکمه‌ی «بازنشانی» فقط وقتی بزرگ‌نمایی فعال است دیده می‌شود */
+.fc-zoom-reset { display: none; }
+.fc-zoomed .fc-zoom-reset { display: grid; }
+
 /* ---------- کاهش حرکت ---------- */
 @media (prefers-reduced-motion: reduce) {
 	.fc-scene[class*="fc-in-"] { animation: fc-fade .3s ease both !important; }
 	.fc-stage canvas, .fc-floor, .fc-glint, .fc-shine { animation: none !important; }
+	.fc-scene { transition: none; }
 }
