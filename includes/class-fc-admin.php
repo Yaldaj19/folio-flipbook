@@ -125,7 +125,7 @@ class FC_Admin {
 	 * متاباکس تنظیمات.
 	 */
 	public static function box_settings( $post ) {
-		$direction = get_post_meta( $post->ID, '_fc_direction', true ) ?: 'rtl';
+		$direction = get_post_meta( $post->ID, '_fc_direction', true ) ?: 'auto';
 		$intro     = get_post_meta( $post->ID, '_fc_intro', true ) ?: 'settle';
 		$mode      = get_post_meta( $post->ID, '_fc_mode', true ) ?: 'book';
 		$bg        = get_post_meta( $post->ID, '_fc_background', true ) ?: 'none';
@@ -134,9 +134,11 @@ class FC_Admin {
 		<div class="fc-settings-row">
 			<label for="fc_direction">جهت ورق‌زدن</label>
 			<select name="fc_direction" id="fc_direction" style="width:100%">
+				<option value="auto" <?php selected( $direction, 'auto' ); ?>>خودکار — بر اساس زبان صفحه (پیش‌فرض)</option>
 				<option value="rtl" <?php selected( $direction, 'rtl' ); ?>>راست به چپ (فارسی)</option>
 				<option value="ltr" <?php selected( $direction, 'ltr' ); ?>>چپ به راست (لاتین)</option>
 			</select>
+			<p class="description">حالت خودکار برای سایت چندزبانه: صفحه‌ی فارسی راست‌به‌چپ و صفحه‌ی انگلیسی چپ‌به‌راست می‌شود.</p>
 		</div>
 		<div class="fc-settings-row">
 			<label for="fc_mode">حالت نمایش</label>
@@ -237,8 +239,9 @@ class FC_Admin {
 		$thumb = isset( $_POST['fc_pdf_thumb'] ) ? absint( $_POST['fc_pdf_thumb'] ) : 0;
 		update_post_meta( $post_id, '_fc_pdf_thumb', $thumb );
 
-		// جهت.
-		$direction = ( isset( $_POST['fc_direction'] ) && 'ltr' === $_POST['fc_direction'] ) ? 'ltr' : 'rtl';
+		// جهت (auto = بر اساس زبان صفحه، rtl، ltr).
+		$dir_in    = isset( $_POST['fc_direction'] ) ? sanitize_key( $_POST['fc_direction'] ) : 'auto';
+		$direction = in_array( $dir_in, array( 'auto', 'rtl', 'ltr' ), true ) ? $dir_in : 'auto';
 		update_post_meta( $post_id, '_fc_direction', $direction );
 
 		// حالت.

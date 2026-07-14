@@ -121,7 +121,13 @@ class FC_Shortcode {
 		$thumb_id  = (int) get_post_meta( $id, '_fc_pdf_thumb', true );
 		$thumb_url = $thumb_id ? wp_get_attachment_image_url( $thumb_id, 'large' ) : '';
 
-		$direction = get_post_meta( $id, '_fc_direction', true ) ?: 'rtl';
+		// جهت: auto → بر اساس زبانِ جاریِ صفحه (WPML مقدار is_rtl() را per-language درست ست می‌کند).
+		$direction = get_post_meta( $id, '_fc_direction', true ) ?: 'auto';
+		if ( 'auto' === $direction ) {
+			$direction = is_rtl() ? 'rtl' : 'ltr';
+		} elseif ( 'ltr' !== $direction ) {
+			$direction = 'rtl';
+		}
 		$mode      = get_post_meta( $id, '_fc_mode', true ) ?: 'book';
 		$intro     = get_post_meta( $id, '_fc_intro', true ) ?: 'settle';
 		$bg        = get_post_meta( $id, '_fc_background', true ) ?: 'none';
