@@ -111,7 +111,7 @@ class FC_Shortcode {
 
 		if ( ! $id || get_post_type( $id ) !== FC_CPT ) {
 			return current_user_can( 'edit_posts' )
-				? '<p style="color:#b32d2e">Folio: شناسه‌ی نامعتبر است.</p>'
+				? '<p style="color:#b32d2e">Folio: ' . esc_html( folio_i18n( 'شناسه‌ی نامعتبر است.' ) ) . '</p>'
 				: '';
 		}
 
@@ -141,7 +141,7 @@ class FC_Shortcode {
 		if ( 'pdf' === $source ) {
 			if ( ! $pdf_url ) {
 				return current_user_can( 'edit_posts' )
-					? '<p style="color:#b32d2e">Folio: فایل PDF انتخاب نشده است.</p>'
+					? '<p style="color:#b32d2e">Folio: ' . esc_html( folio_i18n( 'فایل PDF انتخاب نشده است.' ) ) . '</p>'
 					: '';
 			}
 			wp_enqueue_script( 'fc-pdfjs' );
@@ -151,7 +151,7 @@ class FC_Shortcode {
 			$ids = $ids ? array_filter( array_map( 'absint', explode( ',', $ids ) ) ) : array();
 			if ( empty( $ids ) ) {
 				return current_user_can( 'edit_posts' )
-					? '<p style="color:#b32d2e">Folio: هنوز صفحه‌ای انتخاب نشده است.</p>'
+					? '<p style="color:#b32d2e">Folio: ' . esc_html( folio_i18n( 'هنوز صفحه‌ای انتخاب نشده است.' ) ) . '</p>'
 					: '';
 			}
 			list( $urls, $first, $hires ) = self::page_urls( $ids );
@@ -183,7 +183,7 @@ class FC_Shortcode {
 			data-worker="<?php echo esc_url( $worker ); ?>"
 			data-sound="<?php echo esc_attr( $sound ); ?>"
 			style="--fc-ratio:<?php echo esc_attr( $ratio ); ?>"
-			role="region" aria-roledescription="کاتالوگ ورق‌زن" aria-label="<?php echo esc_attr( get_the_title( $id ) ); ?>">
+			role="region" aria-roledescription="<?php echo esc_attr( folio_i18n( 'کاتالوگ ورق‌زن' ) ); ?>" aria-label="<?php echo esc_attr( get_the_title( $id ) ); ?>">
 
 			<div class="fc-book-wrap">
 				<div class="fc-scene">
@@ -200,35 +200,35 @@ class FC_Shortcode {
 				</div>
 			</div>
 
-			<div class="fc-controls" role="group" aria-label="کنترل‌های کاتالوگ">
-				<button type="button" class="fc-btn fc-nav fc-prev" aria-label="صفحه‌ی قبل">
+			<div class="fc-controls" role="group" aria-label="<?php echo esc_attr( folio_i18n( 'کنترل‌های کاتالوگ' ) ); ?>">
+				<button type="button" class="fc-btn fc-nav fc-prev" aria-label="<?php echo esc_attr( folio_i18n( 'صفحه‌ی قبل' ) ); ?>">
 					<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M8.6 5.9 10 4.5l7.5 7.5-7.5 7.5-1.4-1.4L14.7 12z"/></svg>
 				</button>
-				<span class="fc-counter" aria-live="polite"><?php echo $count ? '۱ / ' . esc_html( $count ) : '…'; ?></span>
-				<button type="button" class="fc-btn fc-nav fc-next" aria-label="صفحه‌ی بعد">
+				<span class="fc-counter" aria-live="polite"><?php echo $count ? esc_html( folio_i18n( '۱' ) ) . ' / ' . esc_html( $count ) : '…'; ?></span>
+				<button type="button" class="fc-btn fc-nav fc-next" aria-label="<?php echo esc_attr( folio_i18n( 'صفحه‌ی بعد' ) ); ?>">
 					<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.4 5.9 14 4.5 6.5 12l7.5 7.5 1.4-1.4L9.3 12z"/></svg>
 				</button>
 				<span class="fc-spacer"></span>
-				<div class="fc-zoom-group" role="group" aria-label="بزرگ‌نمایی">
-					<button type="button" class="fc-btn fc-zoom-out" aria-label="کوچک‌نمایی" title="کوچک‌نمایی">
+				<div class="fc-zoom-group" role="group" aria-label="<?php echo esc_attr( folio_i18n( 'بزرگ‌نمایی' ) ); ?>">
+					<button type="button" class="fc-btn fc-zoom-out" aria-label="<?php echo esc_attr( folio_i18n( 'کوچک‌نمایی' ) ); ?>" title="<?php echo esc_attr( folio_i18n( 'کوچک‌نمایی' ) ); ?>">
 						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7z"/></svg>
 					</button>
-					<button type="button" class="fc-btn fc-zoom-reset" aria-label="بازنشانی بزرگ‌نمایی" title="اندازه‌ی عادی">
+					<button type="button" class="fc-btn fc-zoom-reset" aria-label="<?php echo esc_attr( folio_i18n( 'بازنشانی بزرگ‌نمایی' ) ); ?>" title="<?php echo esc_attr( folio_i18n( 'اندازه‌ی عادی' ) ); ?>">
 						<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm-7 7H3v4c0 1.1.9 2 2 2h4v-2H5v-4zM5 5h4V3H5c-1.1 0-2 .9-2 2v4h2V5zm14-2h-4v2h4v4h2V5c0-1.1-.9-2-2-2zm0 16h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4z"/></svg>
 					</button>
-					<button type="button" class="fc-btn fc-zoom-in" aria-label="بزرگ‌نمایی" title="بزرگ‌نمایی">
+					<button type="button" class="fc-btn fc-zoom-in" aria-label="<?php echo esc_attr( folio_i18n( 'بزرگ‌نمایی' ) ); ?>" title="<?php echo esc_attr( folio_i18n( 'بزرگ‌نمایی' ) ); ?>">
 						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM9.5 7H9v2H7v1h2v2h1v-2h2V9h-2z"/></svg>
 					</button>
 				</div>
-				<button type="button" class="fc-btn fc-sound" aria-pressed="<?php echo 'on' === $sound ? 'true' : 'false'; ?>" aria-label="پخش صدای ورق">
+				<button type="button" class="fc-btn fc-sound" aria-pressed="<?php echo 'on' === $sound ? 'true' : 'false'; ?>" aria-label="<?php echo esc_attr( folio_i18n( 'پخش صدای ورق' ) ); ?>">
 					<svg class="fc-ic-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm11-.83A4.5 4.5 0 0 1 16.5 12 4.5 4.5 0 0 1 14 15.83v-2.06a2.5 2.5 0 0 0 0-3.54V8.17zm0-4.94a9 9 0 0 1 0 17.54v-2.06a7 7 0 0 0 0-13.42V3.23z"/></svg>
 					<svg class="fc-ic-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm18.29-1.29L19.88 6.3 17.6 8.58l-2.29-2.3-1.41 1.42 2.29 2.3-2.29 2.29 1.41 1.41 2.29-2.29 2.28 2.29 1.41-1.41-2.28-2.29 2.28-2.29z"/></svg>
 				</button>
-				<button type="button" class="fc-btn fc-full" aria-label="تمام‌صفحه">
+				<button type="button" class="fc-btn fc-full" aria-label="<?php echo esc_attr( folio_i18n( 'تمام‌صفحه' ) ); ?>">
 					<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 9V4h5v2H6v3H4zm14 0V6h-3V4h5v5h-2zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>
 				</button>
 				<?php if ( $pdf_url ) : ?>
-					<a class="fc-btn fc-download" href="<?php echo esc_url( $pdf_url ); ?>" download rel="noopener" aria-label="دانلود PDF با کیفیت اصلی" title="دانلود PDF (کیفیت اصلی)">
+					<a class="fc-btn fc-download" href="<?php echo esc_url( $pdf_url ); ?>" download rel="noopener" aria-label="<?php echo esc_attr( folio_i18n( 'دانلود PDF با کیفیت اصلی' ) ); ?>" title="<?php echo esc_attr( folio_i18n( 'دانلود PDF (کیفیت اصلی)' ) ); ?>">
 						<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="currentColor" d="M11 4h2v8.17l2.59-2.58L17 11l-5 5-5-5 1.41-1.41L11 12.17V4z"/><path fill="currentColor" d="M5 18h14v2H5z"/></svg>
 					</a>
 				<?php endif; ?>

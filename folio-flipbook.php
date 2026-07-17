@@ -27,6 +27,21 @@ require_once FC_DIR . 'includes/class-fc-admin.php';
 require_once FC_DIR . 'includes/class-fc-shortcode.php';
 
 /**
+ * ترجمهٔ رشته‌های ثابتِ فرانت‌اند از طریق WPML String Translation (context: folio-flipbook).
+ * بدون WPML همان متنِ اصلی برمی‌گردد (وابستگی سخت ندارد). name پیش‌فرض = خودِ متن.
+ */
+function folio_i18n( $text, $name = '' ) {
+	if ( '' === $name ) {
+		$name = $text;
+	}
+	if ( has_filter( 'wpml_translate_single_string' ) ) {
+		do_action( 'wpml_register_single_string', 'folio-flipbook', $name, $text );
+		return (string) apply_filters( 'wpml_translate_single_string', $text, 'folio-flipbook', $name );
+	}
+	return $text;
+}
+
+/**
  * راه‌اندازی افزونه.
  */
 function fc_bootstrap() {
