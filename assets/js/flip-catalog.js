@@ -6,7 +6,11 @@
 	'use strict';
 
 	// نشانهٔ نسخه — برای تشخیص اینکه مرورگر کد جدید را اجرا می‌کند یا نسخهٔ کهنهٔ کش‌شده را.
-	console.log('%cFOLIO viewer build 2026-07-21 ✓ (hi-quality PDF + resilient render, no-stuck-thumb)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+	console.log('%cFOLIO viewer build 2026-07-21c ✓ (super-sampled canvas + max-quality PDF)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+
+	// آیا دستگاه iOS است؟ سقفِ مساحتِ بوم روی iOS ~۱۶M پیکسل است؛ بالاتر → رندرِ بی‌صدا خالی.
+	var IS_IOS = /iP(hone|ad|od)/.test(navigator.platform || '') ||
+		(/Mac/.test(navigator.platform || '') && (navigator.maxTouchPoints || 0) > 1);
 
 	var FA = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 	function fa(n) { return String(n).replace(/\d/g, function (d) { return FA[+d]; }); }
@@ -46,20 +50,21 @@
 
 	// سقفِ مساحتِ بوم؛ مرورگرها (به‌ویژه iOS Safari) بالاتر از این را بی‌صدا رندر نمی‌کنند
 	// و صفحه سفید/خالی می‌ماند — یکی از علت‌های «گیر روی thumbnail».
-	var MAX_CANVAS_AREA = 16 * 1024 * 1024;
+	var MAX_CANVAS_AREA = IS_IOS ? (16 * 1024 * 1024) : (28 * 1024 * 1024);
 
 	function pdfTargetWidth(numPages) {
-		// dpr واقعی (تا ۳) → روی صفحه‌نمایشِ رتینا و هنگام زوم، تصویر تیز می‌ماند.
-		var dpr = Math.min(3, window.devicePixelRatio || 1);
+		// oversampling حتی روی دسکتاپ (dpr=1) تا زومِ ۳× هم تیز باشد.
+		var dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+		var q = Math.max(dpr, 2.5);
 		// مبنا = عرض صفحه‌نمایش (نه فقط پنجره) تا در حالت تمام‌صفحه هم تصویر تیز بماند.
 		var base = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 1280);
-		var w = Math.round(base * dpr);
-		// سقفِ رزولوشن بر اساس تعداد صفحه (کنترلِ حافظه) — ولی به‌قدرِ کافی بالا برای زوم.
-		if (numPages > 80) { w = Math.min(w, 1600); }
-		else if (numPages > 40) { w = Math.min(w, 2000); }
-		else if (numPages > 20) { w = Math.min(w, 2400); }
-		else { w = Math.min(w, 2800); }
-		return Math.max(1400, w);
+		var w = Math.round(base * q);
+		// سقفِ رزولوشن بر اساس تعداد صفحه (کنترلِ حافظه) — ولی خیلی بالا برای بیشترین کیفیت.
+		if (numPages > 80) { w = Math.min(w, 2800); }
+		else if (numPages > 40) { w = Math.min(w, 3400); }
+		else if (numPages > 20) { w = Math.min(w, 4000); }
+		else { w = Math.min(w, 4600); }
+		return Math.max(2200, w);
 	}
 
 	// promiseی که بعد از ms میلی‌ثانیه reject می‌شود تا رندرِ معلق کلِ کتاب را قفل نکند.
@@ -113,7 +118,7 @@
 					ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 					var task = page.render({ canvasContext: ctx, viewport: vp });
 					return withTimeout(task.promise, 25000, 'render').then(function () {
-						var out = { data: canvas.toDataURL('image/jpeg', 0.95), w: canvas.width, h: canvas.height };
+						var out = { data: canvas.toDataURL('image/jpeg', 0.97), w: canvas.width, h: canvas.height };
 						canvas.width = 0; canvas.height = 0;
 						return out;
 					}, function (err) {
@@ -163,6 +168,45 @@
 				next();
 			}).catch(reject);
 		});
+	}
+
+	/* ---------- وضوحِ رتینا برای بومِ StPageFlip (علتِ اصلیِ تاری) ----------
+	   StPageFlip بومِ خود را فقط با اندازهٔ CSS می‌سازد (canvas.width = عرضِ CSS، بدون
+	   devicePixelRatio). یعنی روی نمایشگرِ رتینا/موبایل و هنگامِ زوم، تصویر ۲ تا ۳ برابر
+	   کوچک رندر و بعد بزرگ (کش‌سان) می‌شود → تاری. هرچقدر هم منبع (PDF/عکس) باکیفیت باشد،
+	   این افت در همین بوم اتفاق می‌افتد. اینجا resizeCanvas را بازنویسی می‌کنیم تا بومِ
+	   پشت‌صحنه با dpr بزرگ شود و context متناسب scale شود؛ مختصاتِ رسمِ کتابخانه (که همه
+	   بر مبنای CSS px است) دست‌نخورده می‌ماند، پس چیدمان درست و تصویر تیز می‌شود. */
+	function patchHiDPI(pf) {
+		var ui = pf && pf.ui;
+		if (!ui || ui._fcHiDPI || typeof ui.getCanvas !== 'function') { return; }
+		ui._fcHiDPI = true;
+		var canvas = ui.getCanvas();
+
+		// dpr واقعی + oversampling: حتی روی دسکتاپ (dpr=1) بومِ پشت‌صحنه ~۲.۵ برابرِ
+		// اندازهٔ نمایش ساخته می‌شود تا در زوم تا ۳× هم تیز بماند (نه فقط رتینا).
+		var OVERSAMPLE = 2.5;
+		var dpr = Math.max(1, window.devicePixelRatio || 1);
+		var wantRatio = Math.min(4, Math.max(dpr, OVERSAMPLE));   // سقفِ ۴× برای مهارِ حافظه/FPS
+		// سقفِ مساحتِ بوم: روی iOS ~۱۶M (محدودیتِ سخت‌افزاری)، جای دیگر بازتر.
+		var MAX_BACKING = IS_IOS ? (16 * 1024 * 1024) : (32 * 1024 * 1024);
+
+		ui.resizeCanvas = function () {
+			var cs = getComputedStyle(canvas);
+			var w = parseInt(cs.getPropertyValue('width'), 10) || canvas.clientWidth || canvas.offsetWidth || 1;
+			var h = parseInt(cs.getPropertyValue('height'), 10) || canvas.clientHeight || canvas.offsetHeight || 1;
+			var ratio = wantRatio;
+			var area = (w * ratio) * (h * ratio);
+			if (area > MAX_BACKING) { ratio *= Math.sqrt(MAX_BACKING / area); }   // clamp تا بومِ بی‌صدا خالی نشود
+			canvas.width = Math.max(1, Math.round(w * ratio));
+			canvas.height = Math.max(1, Math.round(h * ratio));
+			var ctx = canvas.getContext('2d');
+			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);   // مختصاتِ CSS px کتابخانه روی بومِ بزرگ درست می‌افتد
+			ctx.imageSmoothingEnabled = true;
+			if ('imageSmoothingQuality' in ctx) { ctx.imageSmoothingQuality = 'high'; }
+		};
+		ui.resizeCanvas();
+		try { pf.update(); } catch (e) {}   // یک بازرسمِ فوری با وضوحِ تازه
 	}
 
 	/* ---------- کلاس اصلی ---------- */
@@ -320,6 +364,9 @@
 		});
 
 		pf.loadFromImages(images);
+
+		// بومِ StPageFlip را به وضوحِ رتینا ارتقا بده (وگرنه همه‌چیز تار می‌ماند).
+		patchHiDPI(pf);
 
 		// صفحه‌ی شروع را دقیق تنظیم کن (بار اول = ۰ یعنی جلد؛ در rebuild = صفحه‌ی جاری).
 		var target = Math.min(Math.max(parseInt(startIndex, 10) || 0, 0), images.length - 1);
