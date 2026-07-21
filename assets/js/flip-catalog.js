@@ -6,7 +6,7 @@
 	'use strict';
 
 	// نشانهٔ نسخه — برای تشخیص اینکه مرورگر کد جدید را اجرا می‌کند یا نسخهٔ کهنهٔ کش‌شده را.
-	console.log('%cFOLIO viewer build 2026-07-14 ✓ (true-RTL + progressive-hires + zoom/pan)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+	console.log('%cFOLIO viewer build 2026-07-21 ✓ (hi-quality PDF + resilient render, no-stuck-thumb)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
 
 	var FA = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 	function fa(n) { return String(n).replace(/\d/g, function (d) { return FA[+d]; }); }
@@ -42,46 +42,123 @@
 		src.start();
 	}
 
-	/* ---------- رندر PDF (پیش‌رونده + مقیاس تطبیقی = بدون هنگ) ---------- */
+	/* ---------- رندر PDF (کیفیت‌بالا + مقاوم در برابر هنگ) ---------- */
+
+	// سقفِ مساحتِ بوم؛ مرورگرها (به‌ویژه iOS Safari) بالاتر از این را بی‌صدا رندر نمی‌کنند
+	// و صفحه سفید/خالی می‌ماند — یکی از علت‌های «گیر روی thumbnail».
+	var MAX_CANVAS_AREA = 16 * 1024 * 1024;
+
 	function pdfTargetWidth(numPages) {
-		var dpr = Math.min(2, window.devicePixelRatio || 1);
+		// dpr واقعی (تا ۳) → روی صفحه‌نمایشِ رتینا و هنگام زوم، تصویر تیز می‌ماند.
+		var dpr = Math.min(3, window.devicePixelRatio || 1);
 		// مبنا = عرض صفحه‌نمایش (نه فقط پنجره) تا در حالت تمام‌صفحه هم تصویر تیز بماند.
 		var base = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 1280);
-		var w = Math.min(2200, Math.round(base * dpr));
-		// هرچه صفحات بیشتر، برای حافظه کمی محافظه‌کارتر — ولی همچنان تیز.
-		if (numPages > 80) { w = Math.min(w, 1100); }
-		else if (numPages > 40) { w = Math.min(w, 1400); }
-		else if (numPages > 20) { w = Math.min(w, 1600); }
-		else { w = Math.min(w, 1900); }
-		return w;
+		var w = Math.round(base * dpr);
+		// سقفِ رزولوشن بر اساس تعداد صفحه (کنترلِ حافظه) — ولی به‌قدرِ کافی بالا برای زوم.
+		if (numPages > 80) { w = Math.min(w, 1600); }
+		else if (numPages > 40) { w = Math.min(w, 2000); }
+		else if (numPages > 20) { w = Math.min(w, 2400); }
+		else { w = Math.min(w, 2800); }
+		return Math.max(1400, w);
+	}
+
+	// promiseی که بعد از ms میلی‌ثانیه reject می‌شود تا رندرِ معلق کلِ کتاب را قفل نکند.
+	function withTimeout(promise, ms, tag) {
+		return new Promise(function (resolve, reject) {
+			var done = false;
+			var t = setTimeout(function () { if (!done) { done = true; reject(new Error('timeout:' + (tag || ''))); } }, ms);
+			promise.then(
+				function (v) { if (!done) { done = true; clearTimeout(t); resolve(v); } },
+				function (e) { if (!done) { done = true; clearTimeout(t); reject(e); } }
+			);
+		});
+	}
+
+	// جای‌خالیِ سفید برای صفحه‌ای که از رندر افتاد → کتاب هرگز گیر نمی‌کند.
+	function blankPage(w, h) {
+		var c = document.createElement('canvas');
+		c.width = w; c.height = h;
+		var x = c.getContext('2d', { alpha: false });
+		x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+		var url = c.toDataURL('image/jpeg', 0.7);
+		c.width = 0; c.height = 0;
+		return url;
 	}
 
 	function renderPdf(url, worker, onProgress) {
 		return new Promise(function (resolve, reject) {
 			if (typeof pdfjsLib === 'undefined') { reject('pdfjs missing'); return; }
 			pdfjsLib.GlobalWorkerOptions.workerSrc = worker;
-			pdfjsLib.getDocument({ url: url, disableAutoFetch: false }).promise.then(function (pdf) {
+
+			// خواندنِ سندِ PDF با timeout و یک‌بار retry (هنگِ گاه‌به‌گاهِ worker با تلاشِ دوم رفع می‌شود).
+			function loadDoc(attempt) {
+				return withTimeout(pdfjsLib.getDocument({ url: url, disableAutoFetch: false }).promise, 30000, 'getDocument')
+					.catch(function (err) { if (attempt < 1) { return loadDoc(attempt + 1); } throw err; });
+			}
+
+			loadDoc(0).then(function (pdf) {
 				var n = pdf.numPages, images = [], ratio = 1.414, i = 1;
 				var targetW = pdfTargetWidth(n);
+
+				// یک صفحه را با scaleِ داده‌شده رندر می‌کند؛ مساحتِ بوم را clamp و رندر را timeout می‌کند.
+				function renderPage(page, scale) {
+					var vp = page.getViewport({ scale: scale });
+					if (vp.width * vp.height > MAX_CANVAS_AREA) {
+						var k = Math.sqrt(MAX_CANVAS_AREA / (vp.width * vp.height));
+						vp = page.getViewport({ scale: scale * k });
+					}
+					var canvas = document.createElement('canvas');
+					canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+					var ctx = canvas.getContext('2d', { alpha: false });
+					ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+					var task = page.render({ canvasContext: ctx, viewport: vp });
+					return withTimeout(task.promise, 25000, 'render').then(function () {
+						var out = { data: canvas.toDataURL('image/jpeg', 0.95), w: canvas.width, h: canvas.height };
+						canvas.width = 0; canvas.height = 0;
+						return out;
+					}, function (err) {
+						try { task.cancel(); } catch (e) {}   // رندرِ کنسل‌شده خطا نیست
+						canvas.width = 0; canvas.height = 0;
+						throw err;
+					});
+				}
+
+				function done() {
+					if (page && page.cleanup) { page.cleanup(); }
+					onProgress(pageNo, n);
+					i++;
+					setTimeout(next, 0); // مهلت به main thread تا UI هنگ نکند
+				}
+				var page, pageNo;
+
 				function next() {
 					if (i > n) { resolve({ images: images, ratio: ratio }); return; }
-					pdf.getPage(i).then(function (page) {
-						var v1 = page.getViewport({ scale: 1 });
-						var vp = page.getViewport({ scale: targetW / v1.width });
-						var canvas = document.createElement('canvas');
-						canvas.width = vp.width; canvas.height = vp.height;
-						var ctx = canvas.getContext('2d');
-						ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, vp.width, vp.height);
-						page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
-							images.push(canvas.toDataURL('image/jpeg', 0.92));
-							if (i === 1) { ratio = vp.height / vp.width; }
-							if (page.cleanup) { page.cleanup(); }
-							canvas.width = 0; canvas.height = 0; // آزادسازی حافظه
-							onProgress(i, n);
-							i++;
-							setTimeout(next, 0); // مهلت به main thread → صفحه هنگ نمی‌کند
-						}).catch(reject);
-					}).catch(reject);
+					pageNo = i;
+					pdf.getPage(pageNo).then(function (p) {
+						page = p;
+						var scale = targetW / page.getViewport({ scale: 1 }).width;
+						renderPage(page, scale)
+							.catch(function () { return renderPage(page, scale); })  // یک retry
+							.then(function (out) {
+								images.push(out.data);
+								if (pageNo === 1) { ratio = out.h / out.w; }
+								done();
+							})
+							.catch(function () {
+								// این صفحه حتی بعد از retry نیامد → جای خالیِ سفید تا کلِ کتاب گیر نکند.
+								var v1 = page.getViewport({ scale: 1 });
+								images.push(blankPage(targetW, Math.round(targetW * (v1.height / v1.width))));
+								if (pageNo === 1) { ratio = v1.height / v1.width; }
+								done();
+							});
+					}).catch(function () {
+						// getPage شکست خورد → جای خالی با نسبتِ پیش‌فرض و ادامه.
+						page = null;
+						images.push(blankPage(targetW, Math.round(targetW * 1.414)));
+						onProgress(pageNo, n);
+						i++;
+						setTimeout(next, 0);
+					});
 				}
 				next();
 			}).catch(reject);
@@ -190,7 +267,8 @@
 				self.root.style.setProperty('--fc-ratio', self.ratio);
 				self.build();
 			}).catch(function (err) {
-				if (self.progressEl) { self.progressEl.textContent = 'خطا در خواندن PDF'; }
+				if (self.progressEl) { self.progressEl.textContent = 'بارگذاری کند بود — از دکمهٔ دانلود، فایل اصلی را ببینید'; }
+				self.root.classList.add('fc-load-error');
 				console.error('Folio PDF:', err);
 			});
 		} else {
