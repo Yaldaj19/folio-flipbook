@@ -6,7 +6,7 @@
 	'use strict';
 
 	// نشانهٔ نسخه — برای تشخیص اینکه مرورگر کد جدید را اجرا می‌کند یا نسخهٔ کهنهٔ کش‌شده را.
-	console.log('%cFOLIO viewer build 2026-08-09 ✓ (PDF fast-open + progressive quality + audio unlock)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+	console.log('%cFOLIO viewer build 2026-08-09b ✓ (PDF on-demand upgrade — no main-thread hang)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
 
 	// آیا دستگاه iOS است؟ سقفِ مساحتِ بوم روی iOS ~۱۶M پیکسل است؛ بالاتر → رندرِ بی‌صدا خالی.
 	var IS_IOS = /iP(hone|ad|od)/.test(navigator.platform || '') ||
@@ -364,6 +364,8 @@
 				self.reveal();
 				// اگر ارتقای کیفیتی در حین ورق‌زدن معلق مانده، حالا که کتاب ساکن شد repaint کن.
 				if (self._repaintPending) { self._repaintPending = false; try { if (self.pf.update) { self.pf.update(); } } catch (err) {} }
+				// کتاب ساکن شد → صفحه‌ی جاری را به کیفیتِ کامل ارتقا بده (سبک و بدونِ قفلِ ورق‌زدن).
+				self.upgradeCurrent();
 			}
 			// صدای ورق دقیقاً هنگام شروعِ چرخش صفحه (باز شدن/ورق‌زدن)
 			if (e.data === 'flipping' && self.soundOn) { self.playSound(); }
@@ -559,46 +561,56 @@
 	   جایگزین می‌کنیم. حافظه/CPU با requestIdleCallback و رندرِ تک‌به‌تک کنترل می‌شود.
 	   ========================================================= */
 	Catalog.prototype.startProgressivePdf = function () {
-		if (this._prog || this.source !== 'pdf' || !this._pdf) { return; }
-		// در حالتِ ذخیره‌ی داده یا شبکه‌ی خیلی کند، ارتقا را انجام نده.
+		if (this.source !== 'pdf' || !this._pdf) { return; }
+		this._hiDone = this._hiDone || {};
+		this.upgradeCurrent();                                   // شروع از صفحه‌ی جاری (جلد)
+	};
+
+	/*
+	 * ارتقای «فقط صفحه‌های در حالِ نمایش» به کیفیتِ کامل — و فقط وقتی کتاب ساکن است.
+	 * چرا این‌طوری: worker این build از PDF.js غیرفعال است و رندر روی main-thread انجام می‌شود؛
+	 * اگر مثلِ قبل همه‌ی صفحات پشت‌سرِهم rerender شوند main-thread قفل می‌شود و کاربر نمی‌تواند
+	 * ورق بزند (هنگ). این نسخه فقط صفحه‌ی جاری/همسایه را، تک‌به‌تک، در idle و در حالتِ 'read'
+	 * رندر می‌کند؛ با شروعِ ورق‌زدن عقب می‌کشد و بعد از نشستن ادامه می‌دهد.
+	 */
+	Catalog.prototype.upgradeCurrent = function () {
+		var self = this;
+		if (this.source !== 'pdf' || !this._pdf || this._hiBusy) { return; }
+		if (this._state && this._state !== 'read') { return; }               // فقط وقتی کتاب ساکن است
 		var conn = navigator.connection || navigator.webkitConnection;
 		if (conn && (conn.saveData || /(^|[^3-9])2g$/.test(conn.effectiveType || ''))) { return; }
-		this._prog = true;
 
-		var self = this, pdf = this._pdf, hiW = this._hiW || pdfTargetWidth(pdf.numPages);
-		var idle = window.requestIdleCallback || function (fn) { return setTimeout(function () { fn(); }, 120); };
-		var done = {};
+		this._hiDone = this._hiDone || {};
+		// سقفِ عرضِ رندرِ main-thread تا freeze نشود (کیفیت هنوز برای زوم کافی است).
+		this._hiW = this._hiW || Math.min(pdfTargetWidth(this._pdf.numPages), 2400);
 
-		// ایندکسِ موتور → شماره‌ی صفحه‌ی PDF. urls در ترتیبِ طبیعیِ PDF است؛ در RTL موتور آرایه را برعکس می‌کند.
-		function toPdfPage(idx) { return self.rtl ? (self.count - idx) : (idx + 1); }
-
-		// نزدیک‌ترین صفحه‌ی ارتقانیافته به موقعیتِ فعلیِ کاربر (هر بار زنده حساب می‌شود تا هر جا هست اول تیز شود).
-		function pickNext() {
-			var cur = (self.pf && self.pf.getCurrentPageIndex) ? self.pf.getCurrentPageIndex() : 0;
-			var best = -1, bestD = Infinity;
-			for (var idx = 0; idx < self.count; idx++) {
-				if (done[idx]) { continue; }
-				var d = Math.abs(idx - cur);
-				if (d < bestD) { bestD = d; best = idx; }
-			}
-			return best;
+		var cur = (this.pf && this.pf.getCurrentPageIndex) ? this.pf.getCurrentPageIndex() : 0;
+		var targets = [cur, cur + 1, cur - 1], idx = -1;        // جاری + همسایه‌ها (spread و ورقِ بعد)
+		for (var k = 0; k < targets.length; k++) {
+			var t = targets[k];
+			if (t >= 0 && t < this.count && !this._hiDone[t]) { idx = t; break; }
 		}
+		if (idx < 0) { return; }                                // صفحاتِ دیده‌شده همه ارتقا یافته‌اند
 
-		function step() {
-			var idx = pickNext();
-			if (idx < 0) { self._prog = 'done'; return; }
-			done[idx] = true;
-			var pageNo = toPdfPage(idx);
-			if (pageNo < 1 || pageNo > pdf.numPages) { idle(step); return; }
+		this._hiDone[idx] = true;
+		this._hiBusy = true;
+		var pdf = this._pdf, hiW = this._hiW;
+		var pageNo = this.rtl ? (this.count - idx) : (idx + 1);
+		var idle = window.requestIdleCallback || function (fn) { return setTimeout(function () { fn(); }, 120); };
+
+		idle(function () {
+			// اگر کاربر دوباره شروع به ورق‌زدن کرد، این صفحه را رها کن تا بعدِ نشستن دوباره تلاش شود.
+			if (self._state && self._state !== 'read') { self._hiDone[idx] = false; self._hiBusy = false; return; }
+			if (pageNo < 1 || pageNo > pdf.numPages) { self._hiBusy = false; self.upgradeCurrent(); return; }
 			pdf.getPage(pageNo).then(function (page) {
-				renderPageToDataURL(page, hiW, 0.97).then(function (out) {
+				renderPageToDataURL(page, hiW, 0.95).then(function (out) {
 					if (page.cleanup) { page.cleanup(); }
 					self.upgradePageImage(idx, out.data);
-					idle(step);
-				}).catch(function () { if (page && page.cleanup) { page.cleanup(); } idle(step); });
-			}).catch(function () { idle(step); });
-		}
-		idle(step);
+					self._hiBusy = false;
+					self.upgradeCurrent();                          // صفحه‌ی بعدیِ لازم (اگر هنوز ساکن است)
+				}).catch(function () { if (page && page.cleanup) { page.cleanup(); } self._hiBusy = false; });
+			}).catch(function () { self._hiBusy = false; });
+		});
 	};
 
 	// شیءِ تصویرِ صفحه را با نسخه‌ی کیفیت‌بالا (dataURL) جایگزین می‌کند: نه لودر، نه بارگذاریِ دوباره.
