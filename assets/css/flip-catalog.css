@@ -23,6 +23,27 @@
 	border-radius: 14px;
 }
 .fc-catalog:not(.fc-ready) .fc-book-wrap { min-height: 320px; }
+/* بسترِ خاکستریِ «در حال بارگذاری» — فقط وقتی پس‌زمینه‌ی رنگی انتخاب نشده (bg=none) */
+.fc-bg-none:not(.fc-ready) .fc-book-wrap {
+	background: linear-gradient(180deg, #f4f4f7, #e8e8ee);
+}
+/* درخششِ ملایمِ اسکلتون تا کاربر بفهمد در حال بارگذاری است (همه‌ی حالت‌ها) */
+.fc-catalog:not(.fc-ready) .fc-book-wrap::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: linear-gradient(100deg, transparent 35%, rgba(255, 255, 255, .45) 50%, transparent 65%);
+	background-size: 220% 100%;
+	animation: fc-shimmer 1.5s ease-in-out infinite;
+	pointer-events: none;
+	z-index: 0;
+}
+.fc-catalog.fc-ready .fc-book-wrap::after { display: none; }
+@keyframes fc-shimmer {
+	0%   { background-position: 160% 0; }
+	100% { background-position: -60% 0; }
+}
 
 /* پس‌زمینه‌های اختیاری */
 .fc-bg-light .fc-book-wrap {
@@ -196,19 +217,27 @@
 	pointer-events: none;
 }
 .fc-loader span {
-	width: 38px;
-	height: 38px;
-	border: 3px solid rgba(0, 0, 0, .14);
-	border-top-color: var(--fc-accent);
+	width: 46px;
+	height: 46px;
 	border-radius: 50%;
+	/* اسپینر: حلقه‌ی نازکِ کم‌رنگ + کمانِ طلاییِ ۹۰درجه (بالا+راست) که می‌چرخد */
+	border: 4px solid rgba(0, 0, 0, .12);
+	border-top-color: var(--fc-accent);
+	border-right-color: var(--fc-accent);
+	filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .18));
 	animation: fc-spin .8s linear infinite;
+}
+.fc-bg-dark .fc-loader span {
+	border-color: rgba(255, 255, 255, .16);
+	border-top-color: var(--fc-accent);
+	border-right-color: var(--fc-accent);
 }
 .fc-progress { font-size: 13px; font-style: normal; color: #555; font-weight: 600; }
 .fc-bg-dark .fc-progress { color: #ddd; }
 
-/* وقتی پیش‌نمایش جلد هست: اسپینر حذف، متن پیشرفت به‌صورت pill پایین تصویر */
-.fc-catalog:has(.fc-poster) .fc-loader { align-content: end; padding-bottom: 10px; }
-.fc-catalog:has(.fc-poster) .fc-loader span { display: none; }
+/* وقتی پیش‌نمایش جلد هست: اسپینرِ کوچک بالای pillِ پیشرفت، هر دو پایینِ تصویر */
+.fc-catalog:has(.fc-poster) .fc-loader { align-content: end; padding-bottom: 14px; gap: 10px; }
+.fc-catalog:has(.fc-poster) .fc-loader span { width: 34px; height: 34px; border-width: 3px; }
 .fc-catalog:has(.fc-poster) .fc-progress {
 	background: rgba(0, 0, 0, .65);
 	color: #fff;
@@ -459,5 +488,6 @@
 @media (prefers-reduced-motion: reduce) {
 	.fc-scene[class*="fc-in-"] { animation: fc-fade .3s ease both !important; }
 	.fc-stage canvas, .fc-floor, .fc-glint, .fc-shine { animation: none !important; }
+	.fc-book-wrap::after { animation: none !important; }   /* درخششِ اسکلتون خاموش (اسپینر می‌ماند) */
 	.fc-scene { transition: none; }
 }
