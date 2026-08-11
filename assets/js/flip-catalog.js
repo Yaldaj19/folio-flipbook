@@ -6,7 +6,7 @@
 	'use strict';
 
 	// نشانهٔ نسخه — برای تشخیص اینکه مرورگر کد جدید را اجرا می‌کند یا نسخهٔ کهنهٔ کش‌شده را.
-	console.log('%cFOLIO viewer build 2026-08-09b ✓ (PDF on-demand upgrade — no main-thread hang)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
+	console.log('%cFOLIO viewer build 2026-08-11 ✓ (PDF instant-open — first pages then lazy background fill)', 'color:#FFCC00;background:#111;padding:3px 8px;border-radius:4px;font-weight:bold');
 
 	// آیا دستگاه iOS است؟ سقفِ مساحتِ بوم روی iOS ~۱۶M پیکسل است؛ بالاتر → رندرِ بی‌صدا خالی.
 	var IS_IOS = /iP(hone|ad|od)/.test(navigator.platform || '') ||
@@ -135,40 +135,16 @@
 		return loadDoc(0);
 	}
 
-	// «پاسِ اول»: همه‌ی صفحه‌ها را با عرض/کیفیتِ داده‌شده رندر می‌کند. صفحه‌ی افتاده → جای خالیِ سفید تا کتاب گیر نکند.
-	function renderAllPages(pdf, targetW, quality, onProgress) {
-		return new Promise(function (resolve) {
-			var n = pdf.numPages, images = [], ratio = 1.414, i = 1;
-			function next() {
-				if (i > n) { resolve({ images: images, ratio: ratio }); return; }
-				var pageNo = i;
-				pdf.getPage(pageNo).then(function (page) {
-					renderPageToDataURL(page, targetW, quality)
-						.catch(function () { return renderPageToDataURL(page, targetW, quality); })  // یک retry
-						.then(function (out) {
-							images.push(out.data);
-							if (pageNo === 1) { ratio = out.h / out.w; }
-							if (page.cleanup) { page.cleanup(); }
-							if (onProgress) { onProgress(pageNo, n); }
-							i++; setTimeout(next, 0);   // مهلت به main thread تا UI هنگ نکند
-						})
-						.catch(function () {
-							// این صفحه حتی بعد از retry نیامد → جای خالیِ سفید تا کلِ کتاب گیر نکند.
-							var v1 = page.getViewport({ scale: 1 });
-							images.push(blankPage(targetW, Math.round(targetW * (v1.height / v1.width))));
-							if (pageNo === 1) { ratio = v1.height / v1.width; }
-							if (onProgress) { onProgress(pageNo, n); }
-							i++; setTimeout(next, 0);
-						});
-				}).catch(function () {
-					// getPage شکست خورد → جای خالی با نسبتِ پیش‌فرض و ادامه.
-					images.push(blankPage(targetW, Math.round(targetW * 1.414)));
-					if (onProgress) { onProgress(pageNo, n); }
-					i++; setTimeout(next, 0);
-				});
-			}
-			next();
-		});
+	// یک صفحه‌ی PDF را رندر می‌کند؛ خطا/تایم‌اوت → null (به‌جای قفل‌کردنِ کل جریان). یک retry.
+	function renderPdfPage(pdf, pageNo, targetW, quality) {
+		return pdf.getPage(pageNo).then(function (page) {
+			return renderPageToDataURL(page, targetW, quality)
+				.catch(function () { return renderPageToDataURL(page, targetW, quality); })  // یک retry
+				.then(
+					function (out) { if (page.cleanup) { page.cleanup(); } return out; },
+					function () { if (page.cleanup) { page.cleanup(); } return null; }
+				);
+		}, function () { return null; });
 	}
 
 	/* ---------- وضوحِ رتینا برای بومِ StPageFlip (علتِ اصلیِ تاری) ----------
@@ -304,20 +280,10 @@
 		if (this.source === 'pdf' && this.pdf) {
 			this.loader.classList.add('fc-loading');
 			openPdf(this.pdf, this.worker).then(function (pdf) {
-				self._pdf = pdf;                                   // نگه‌داشتنِ سند برای پاسِ دومِ کیفیت‌بالا
+				self._pdf = pdf;                                   // نگه‌داشتنِ سند برای پاس‌های بعدی
 				self._hiW = pdfTargetWidth(pdf.numPages);
-				// پاسِ اول: همه‌ی صفحه‌ها با کیفیتِ پایین → کتاب سریع باز می‌شود.
-				return renderAllPages(pdf, pdfFastWidth(), 0.72, function (i, n) {
-					if (self.progressEl) { self.progressEl.textContent = 'آماده‌سازی صفحه‌ها ' + fa(i) + '/' + fa(n); }
-				});
-			}).then(function (res) {
-				self.urls = res.images;
-				self.count = res.images.length;
-				self.ratio = res.ratio || self.ratio;
-				self.root.style.setProperty('--fc-ratio', self.ratio);
-				self.build();
-				// پاسِ دوم: ارتقای تدریجیِ کیفیت تا full، کمی بعد از باز شدن تا لودِ اولیه مختل نشود.
-				setTimeout(function () { self.startProgressivePdf(); }, 900);
+				// فقط چند صفحه‌ی اول را رندر کن و کتاب را فوراً باز کن؛ بقیه در پس‌زمینه پر می‌شوند.
+				self.startPdfFast(pdf);
 			}).catch(function (err) {
 				if (self.progressEl) { self.progressEl.textContent = 'بارگذاری کند بود — از دکمهٔ دانلود، فایل اصلی را ببینید'; }
 				self.root.classList.add('fc-load-error');
@@ -326,6 +292,92 @@
 		} else {
 			this.build();
 		}
+	};
+
+	/* =========================================================
+	   لودِ سریعِ PDF (باز شدنِ فوری)
+	   ---------------------------------------------------------
+	   قبلاً کتاب تا رندرِ «همه‌ی» صفحه‌ها باز نمی‌شد؛ روی PDFهای پرصفحه چند ثانیه فریز.
+	   حالا فقط چند صفحه‌ی اول (جلد + اسپردِ اول) را رندر می‌کنیم، کتاب را باز می‌کنیم،
+	   و بقیه‌ی صفحه‌ها را در پس‌زمینه و به‌ترتیبِ نزدیکی به صفحه‌ی جاری (در idle، تک‌به‌تک،
+	   بدون قفلِ main-thread) پر می‌کنیم. سپس پاسِ کیفیت‌بالا مثلِ قبل روی صفحه‌های دیده‌شده اجرا می‌شود.
+	   ========================================================= */
+	Catalog.prototype.startPdfFast = function (pdf) {
+		var self = this;
+		var n = pdf.numPages;
+		var fastW = pdfFastWidth();
+		var PRIME = Math.min(n, 3);       // جلد + اسپردِ اول تا اولین ورق‌زدن جای‌خالی نبیند
+		self._pdfFastW = fastW;
+
+		var primed = [];
+		var idx = 0;
+		(function primeNext() {
+			if (idx >= PRIME) { finish(); return; }
+			renderPdfPage(pdf, idx + 1, fastW, 0.72).then(function (out) { primed[idx] = out; idx++; primeNext(); });
+		})();
+
+		function finish() {
+			var first = primed[0];
+			var ratio = first ? (first.h / first.w) : 1.414;
+			// جای‌خالیِ سفیدِ سبک (کوچک) با نسبتِ درست؛ StPageFlip با size:'stretch' آن را کش می‌آورد.
+			var blank = blankPage(600, Math.round(600 * ratio));
+
+			var images = new Array(n);
+			for (var i = 0; i < n; i++) { images[i] = blank; }
+			self._pdfReady = {};                         // کلید = شماره‌ی PDF page (۱-based) که رندر شده
+			for (var p = 0; p < PRIME; p++) {
+				if (primed[p]) { images[p] = primed[p].data; self._pdfReady[p + 1] = true; }
+			}
+
+			self.urls = images;                          // ترتیبِ PDF (orderedImages برای RTL برعکس می‌کند)
+			self.count = n;
+			self.ratio = ratio || self.ratio;
+			self.root.style.setProperty('--fc-ratio', self.ratio);
+			self.build();
+
+			// بقیه‌ی صفحه‌ها را در پس‌زمینه پر کن (کمی بعد از آماده‌شدنِ موتور).
+			setTimeout(function () { self.fillPdfFast(); }, 300);
+		}
+	};
+
+	/*
+	 * پرکردنِ صفحه‌های باقی‌مانده با کیفیتِ fast، در پس‌زمینه.
+	 * هر بار نزدیک‌ترین صفحه‌ی هنوز-خالی به موقعیتِ جاری را رندر و بی‌سروصدا جایگزین می‌کند؛
+	 * اولویت با هر ورق‌زدنِ کاربر دوباره محاسبه می‌شود. در پایان، پاسِ کیفیت‌بالا شروع می‌شود.
+	 */
+	Catalog.prototype.fillPdfFast = function () {
+		var self = this;
+		if (this.source !== 'pdf' || !this._pdf || this._fastFilling) { return; }
+		this._fastFilling = true;
+		var pdf = this._pdf, n = this.count, fastW = this._pdfFastW || pdfFastWidth();
+		var idle = window.requestIdleCallback || function (fn) { return setTimeout(function () { fn(); }, 60); };
+
+		function next() {
+			// نزدیک‌ترین صفحه‌ی هنوز-خالی به صفحه‌ی جاری را پیدا کن (engine index).
+			var cur = (self.pf && self.pf.getCurrentPageIndex) ? self.pf.getCurrentPageIndex() : 0;
+			var best = -1, bestDist = Infinity;
+			for (var ei = 0; ei < n; ei++) {
+				var pg = self.rtl ? (n - ei) : (ei + 1);   // شماره‌ی PDF page برای این engine index
+				if (self._pdfReady[pg]) { continue; }
+				var d = Math.abs(ei - cur);
+				if (d < bestDist) { bestDist = d; best = ei; }
+			}
+			if (best < 0) {                                // همه با کیفیتِ fast آماده شد → پاسِ کیفیت‌بالا
+				self._fastFilling = false;
+				self.startProgressivePdf();
+				return;
+			}
+			var engineIdx = best;
+			var pageNo = self.rtl ? (n - engineIdx) : (engineIdx + 1);
+			self._pdfReady[pageNo] = true;                 // علامت بزن تا دوباره انتخاب نشود (خطا هم = رد شود)
+			idle(function () {
+				renderPdfPage(pdf, pageNo, fastW, 0.72).then(function (out) {
+					if (out) { self.upgradePageImage(engineIdx, out.data); }
+					next();
+				});
+			});
+		}
+		next();
 	};
 
 	/*
